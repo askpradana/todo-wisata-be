@@ -1,6 +1,6 @@
 import express from "express";
 import { verifyToken } from "../middleware/verifyjwt.js";
-import { db, getColorHex } from "../core/database.js";
+import { db, getColorHex, formatReminder } from "../core/database.js";
 
 const router = express.Router();
 
@@ -12,18 +12,19 @@ router.get("/", verifyToken, (req, res) => {
 			return res.status(500).json({ error: "Internal server error" });
 		}
 
-		const todosWithHex = todos.map((todo) => ({
+		const formattedTodos = todos.map((todo) => ({
 			...todo,
 			colorHex: getColorHex(todo.color),
+			reminder: formatReminder(todo.reminder),
 		}));
 
-		res.json(todosWithHex);
+		res.json(formattedTodos);
 	});
 });
 
 router.post("/", verifyToken, (req, res) => {
 	const userId = req.user.userId;
-	const { title, description, color } = req.body;
+	const { title, description, color, reminder } = req.body;
 
 	if (!title) {
 		return res.status(400).json({ error: "Title is required for the todo" });
@@ -32,11 +33,11 @@ router.post("/", verifyToken, (req, res) => {
 	const validColors = ["red", "purple", "blue", "green", "yellow", "default"];
 	const todoColor = validColors.includes(color) ? color : "default";
 
-	const query = `INSERT INTO todos (user_id, title, description, completed, color) VALUES (?, ?, ?, ?, ?)`;
+	const query = `INSERT INTO todos (user_id, title, description, completed, color, reminder) VALUES (?, ?, ?, ?, ?, ?)`;
 
 	db.run(
 		query,
-		[userId, title, description || null, false, todoColor],
+		[userId, title, description || null, false, todoColor, reminder || null],
 		function (err) {
 			if (err) {
 				return res.status(500).json({ error: "Failed to create new todo" });
@@ -49,9 +50,13 @@ router.post("/", verifyToken, (req, res) => {
 						.json({ error: "Failed to retrieve the new todo" });
 				}
 
-				todo.colorHex = getColorHex(todo.color);
+				const formattedTodo = {
+					...todo,
+					colorHex: getColorHex(todo.color),
+					reminder: formatReminder(todo.reminder),
+				};
 
-				res.status(201).json(todo);
+				res.status(201).json(formattedTodo);
 			});
 		}
 	);
@@ -60,21 +65,45 @@ router.post("/", verifyToken, (req, res) => {
 router.patch("/:id", verifyToken, (req, res) => {
 	const userId = req.user.userId;
 	const todoId = req.params.id;
-	const { completed } = req.body;
+	const { completed, title, description, color, reminder } = req.body;
 
-	if (completed === undefined) {
-		return res.status(400).json({ error: "Completed status is required" });
+	let updateFields = [];
+	let updateValues = [];
+
+	if (completed !== undefined) {
+		updateFields.push("completed = ?");
+		updateValues.push(completed ? 1 : 0);
+	}
+	if (title !== undefined) {
+		updateFields.push("title = ?");
+		updateValues.push(title);
+	}
+	if (description !== undefined) {
+		updateFields.push("description = ?");
+		updateValues.push(description);
+	}
+	if (color !== undefined) {
+		const validColors = ["red", "purple", "blue", "green", "yellow", "default"];
+		updateFields.push("color = ?");
+		updateValues.push(validColors.includes(color) ? color : "default");
+	}
+	if (reminder !== undefined) {
+		updateFields.push("reminder = ?");
+		updateValues.push(reminder);
 	}
 
-	const query = `
-    UPDATE todos 
-    SET completed = ? 
-    WHERE id = ? AND user_id = ?
-  `;
+	if (updateFields.length === 0) {
+		return res.status(400).json({ error: "No valid fields to update" });
+	}
 
-	db.run(query, [completed ? 1 : 0, todoId, userId], function (err) {
+	const query = `UPDATE todos SET ${updateFields.join(
+		", "
+	)} WHERE id = ? AND user_id = ?`;
+	updateValues.push(todoId, userId);
+
+	db.run(query, updateValues, function (err) {
 		if (err) {
-			return res.status(500).json({ error: "Failed to update todo status" });
+			return res.status(500).json({ error: "Failed to update todo" });
 		}
 
 		if (this.changes === 0) {
@@ -90,9 +119,13 @@ router.patch("/:id", verifyToken, (req, res) => {
 					.json({ error: "Failed to retrieve the updated todo" });
 			}
 
-			todo.completed = todo.completed === 1;
+			const formattedTodo = {
+				...todo,
+				colorHex: getColorHex(todo.color),
+				reminder: formatReminder(todo.reminder),
+			};
 
-			res.json(todo);
+			res.json(formattedTodo);
 		});
 	});
 });

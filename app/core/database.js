@@ -24,10 +24,10 @@ db.run(`CREATE TABLE IF NOT EXISTS todos (
   description TEXT,
   completed BOOLEAN DEFAULT 0,
   color TEXT CHECK(color IN ('red', 'purple', 'blue', 'green', 'yellow', 'default') OR color IS NULL) DEFAULT 'default',
+  reminder DATETIME,
   FOREIGN KEY (user_id) REFERENCES users (id)
 )`);
 
-// function to get color hex
 export function getColorHex(colorName) {
 	const colorMap = {
 		red: "#ff0000",
@@ -38,4 +38,10 @@ export function getColorHex(colorName) {
 		default: "transparent",
 	};
 	return colorMap[colorName] || "transparent";
+}
+
+export function formatReminder(reminder) {
+	if (!reminder) return null;
+	const date = new Date(reminder);
+	return date.toISOString();
 }
