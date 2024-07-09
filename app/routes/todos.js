@@ -1,6 +1,6 @@
 import express from "express";
 import { verifyToken } from "../middleware/verifyjwt.js";
-import db from "../core/database.js";
+import { db, getColorHex } from "../core/database.js";
 
 const router = express.Router();
 
@@ -12,35 +12,49 @@ router.get("/", verifyToken, (req, res) => {
 			return res.status(500).json({ error: "Internal server error" });
 		}
 
-		res.json(todos);
+		const todosWithHex = todos.map((todo) => ({
+			...todo,
+			colorHex: getColorHex(todo.color),
+		}));
+
+		res.json(todosWithHex);
 	});
 });
 
 router.post("/", verifyToken, (req, res) => {
 	const userId = req.user.userId;
-	const { title, description } = req.body;
+	const { title, description, color } = req.body;
 
 	if (!title) {
 		return res.status(400).json({ error: "Title is required for the todo" });
 	}
 
-	const query = `INSERT INTO todos (user_id, title, description, completed) VALUES (?, ?, ?, ?)`;
+	const validColors = ["red", "purple", "blue", "green", "yellow", "default"];
+	const todoColor = validColors.includes(color) ? color : "default";
 
-	db.run(query, [userId, title, description || null, false], function (err) {
-		if (err) {
-			return res.status(500).json({ error: "Failed to create new todo" });
-		}
+	const query = `INSERT INTO todos (user_id, title, description, completed, color) VALUES (?, ?, ?, ?, ?)`;
 
-		db.get("SELECT * FROM todos WHERE id = ?", [this.lastID], (err, todo) => {
+	db.run(
+		query,
+		[userId, title, description || null, false, todoColor],
+		function (err) {
 			if (err) {
-				return res
-					.status(500)
-					.json({ error: "Failed to retrieve the new todo" });
+				return res.status(500).json({ error: "Failed to create new todo" });
 			}
 
-			res.status(201).json(todo);
-		});
-	});
+			db.get("SELECT * FROM todos WHERE id = ?", [this.lastID], (err, todo) => {
+				if (err) {
+					return res
+						.status(500)
+						.json({ error: "Failed to retrieve the new todo" });
+				}
+
+				todo.colorHex = getColorHex(todo.color);
+
+				res.status(201).json(todo);
+			});
+		}
+	);
 });
 
 router.patch("/:id", verifyToken, (req, res) => {
