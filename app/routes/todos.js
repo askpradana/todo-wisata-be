@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.get("/", verifyToken, (req, res) => {
 	const userId = req.user.userId;
+	const userName = req.user.username;
 
 	db.all("SELECT * FROM todos WHERE user_id = ?", [userId], (err, todos) => {
 		if (err) {
@@ -18,7 +19,10 @@ router.get("/", verifyToken, (req, res) => {
 			reminder: formatReminder(todo.reminder),
 		}));
 
-		res.json(formattedTodos);
+		res.json({
+			username: userName,
+			todoList: formattedTodos,
+		});
 	});
 });
 
