@@ -130,4 +130,39 @@ router.patch("/:id", verifyToken, (req, res) => {
 	});
 });
 
+router.get("/myday", verifyToken, (req, res) => {
+	const userId = req.user.userId;
+
+	const today = new Date();
+	const monthDay = `${(today.getMonth() + 1)
+		.toString()
+		.padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
+
+	const query = `
+	  SELECT * FROM todos 
+	  WHERE user_id = ? 
+	  AND reminder IS NOT NULL
+	  AND completed = 0
+	  AND (
+		(strftime('%m-%d', reminder) = ?) OR
+		DATE(reminder) < DATE('now')
+	  )
+	  ORDER BY reminder ASC
+	`;
+
+	db.all(query, [userId, monthDay], (err, todos) => {
+		if (err) {
+			return res.status(500).json({ error: "Internal server error" });
+		}
+
+		const formattedTodos = todos.map((todo) => ({
+			...todo,
+			colorHex: getColorHex(todo.color),
+			reminder: formatReminder(todo.reminder),
+		}));
+
+		res.json(formattedTodos);
+	});
+});
+
 export default router;
