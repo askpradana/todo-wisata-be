@@ -11,6 +11,7 @@ router.post("/login", (req, res) => {
 
 	db.get("SELECT * FROM users WHERE email = ?", [email], (err, user) => {
 		if (err) {
+			console.error("Database error:", err);
 			return res.status(500).json({ error: "Internal server error" });
 		}
 
@@ -20,6 +21,7 @@ router.post("/login", (req, res) => {
 
 		bcrypt.compare(password, user.password, (err, result) => {
 			if (err) {
+				console.error("Bcrypt error:", err);
 				return res.status(500).json({ error: "Internal server error" });
 			}
 
@@ -33,7 +35,22 @@ router.post("/login", (req, res) => {
 				{ expiresIn: "1h" }
 			);
 
-			res.json({ token });
+			// Update the latest token in the database
+			db.run(
+				"UPDATE users SET latest_token = ? WHERE id = ?",
+				[token, user.id],
+				(err) => {
+					if (err) {
+						console.error("Token update error:", err);
+						return res.status(500).json({ error: "Failed to update token" });
+					}
+
+					console.log(
+						`User ${user.id} logged in. Token: ${token.substring(0, 10)}...`
+					);
+					res.json({ token, userId: user.id });
+				}
+			);
 		});
 	});
 });
