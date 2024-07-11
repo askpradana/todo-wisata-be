@@ -134,6 +134,27 @@ router.patch("/:id", verifyToken, (req, res) => {
 	});
 });
 
+app.delete("/:id", async (req, res) => {
+	const { id } = req.params;
+	const userId = req.user.id;
+
+	try {
+		const result = await db.run(
+			"DELETE FROM todos WHERE id = ? AND user_id = ?",
+			[id, userId]
+		);
+
+		if (result.changes === 0) {
+			return res.status(404).json({ message: "Task not found" });
+		}
+
+		res.json({ message: "Task deleted" });
+	} catch (error) {
+		console.error("Error deleting todo:", error);
+		res.status(500).json({ message: "Internal server error" });
+	}
+});
+
 router.get("/myday", verifyToken, (req, res) => {
 	const userId = req.user.userId;
 
