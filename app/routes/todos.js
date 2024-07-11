@@ -134,9 +134,9 @@ router.patch("/:id", verifyToken, (req, res) => {
 	});
 });
 
-app.delete("/:id", async (req, res) => {
+router.delete("/:id", verifyToken, async (req, res) => {
 	const { id } = req.params;
-	const userId = req.user.id;
+	const userId = req.user.userId;
 
 	try {
 		const result = await db.run(
