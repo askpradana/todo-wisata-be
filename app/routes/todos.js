@@ -4,16 +4,15 @@ import { db, getColorHex, formatReminder } from "../core/database.js";
 
 const router = express.Router();
 
-router.get("/", verifyToken, (req, res) => {
+router.get("/", verifyToken, async (req, res) => {
 	const userId = req.user.userId;
 	const userName = req.user.username;
 
-	db.all("SELECT * FROM todos WHERE user_id = ?", [userId], (err, todos) => {
-		if (err) {
-			return res.status(500).json({ error: "Internal server error" });
-		}
-
-		const formattedTodos = todos.map((todo) => ({
+	try {
+		const result = await db.query("SELECT * FROM todos WHERE user_id = $1", [
+			userId,
+		]);
+		const formattedTodos = result.rows.map((todo) => ({
 			...todo,
 			colorHex: getColorHex(todo.color),
 			reminder: formatReminder(todo.reminder),
@@ -23,10 +22,13 @@ router.get("/", verifyToken, (req, res) => {
 			username: userName,
 			todoList: formattedTodos,
 		});
-	});
+	} catch (error) {
+		console.error("Error fetching todos:", error);
+		res.status(500).json({ error: "Internal server error" });
+	}
 });
 
-router.post("/", verifyToken, (req, res) => {
+router.post("/", verifyToken, async (req, res) => {
 	const userId = req.user.userId;
 	const { title, description, color, reminder } = req.body;
 
@@ -37,63 +39,61 @@ router.post("/", verifyToken, (req, res) => {
 	const validColors = ["red", "purple", "blue", "green", "yellow", "default"];
 	const todoColor = validColors.includes(color) ? color : "default";
 
-	const query = `INSERT INTO todos (user_id, title, description, completed, color, reminder) VALUES (?, ?, ?, ?, ?, ?)`;
+	try {
+		const result = await db.query(
+			`INSERT INTO todos (user_id, title, description, completed, color, reminder) 
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+			[userId, title, description || null, false, todoColor, reminder || null]
+		);
 
-	db.run(
-		query,
-		[userId, title, description || null, false, todoColor, reminder || null],
-		function (err) {
-			if (err) {
-				return res.status(500).json({ error: "Failed to create new todo" });
-			}
+		const newTodo = result.rows[0];
+		const formattedTodo = {
+			...newTodo,
+			colorHex: getColorHex(newTodo.color),
+			reminder: formatReminder(newTodo.reminder),
+		};
 
-			db.get("SELECT * FROM todos WHERE id = ?", [this.lastID], (err, todo) => {
-				if (err) {
-					return res
-						.status(500)
-						.json({ error: "Failed to retrieve the new todo" });
-				}
-
-				const formattedTodo = {
-					...todo,
-					colorHex: getColorHex(todo.color),
-					reminder: formatReminder(todo.reminder),
-				};
-
-				res.status(201).json(formattedTodo);
-			});
-		}
-	);
+		res.status(201).json(formattedTodo);
+	} catch (error) {
+		console.error("Error creating todo:", error);
+		res.status(500).json({ error: "Failed to create new todo" });
+	}
 });
 
-router.patch("/:id", verifyToken, (req, res) => {
+router.patch("/:id", verifyToken, async (req, res) => {
 	const userId = req.user.userId;
 	const todoId = req.params.id;
 	const { completed, title, description, color, reminder } = req.body;
 
-	let updateFields = [];
-	let updateValues = [];
+	const updateFields = [];
+	const updateValues = [];
+	let paramCounter = 1;
 
 	if (completed !== undefined) {
-		updateFields.push("completed = ?");
-		updateValues.push(completed ? 1 : 0);
+		updateFields.push(`completed = $${paramCounter}`);
+		updateValues.push(completed);
+		paramCounter++;
 	}
 	if (title !== undefined) {
-		updateFields.push("title = ?");
+		updateFields.push(`title = $${paramCounter}`);
 		updateValues.push(title);
+		paramCounter++;
 	}
 	if (description !== undefined) {
-		updateFields.push("description = ?");
+		updateFields.push(`description = $${paramCounter}`);
 		updateValues.push(description);
+		paramCounter++;
 	}
 	if (color !== undefined) {
 		const validColors = ["red", "purple", "blue", "green", "yellow", "default"];
-		updateFields.push("color = ?");
+		updateFields.push(`color = $${paramCounter}`);
 		updateValues.push(validColors.includes(color) ? color : "default");
+		paramCounter++;
 	}
 	if (reminder !== undefined) {
-		updateFields.push("reminder = ?");
+		updateFields.push(`reminder = $${paramCounter}`);
 		updateValues.push(reminder);
+		paramCounter++;
 	}
 
 	if (updateFields.length === 0) {
@@ -102,36 +102,32 @@ router.patch("/:id", verifyToken, (req, res) => {
 
 	const query = `UPDATE todos SET ${updateFields.join(
 		", "
-	)} WHERE id = ? AND user_id = ?`;
+	)} WHERE id = $${paramCounter} AND user_id = $${
+		paramCounter + 1
+	} RETURNING *`;
 	updateValues.push(todoId, userId);
 
-	db.run(query, updateValues, function (err) {
-		if (err) {
-			return res.status(500).json({ error: "Failed to update todo" });
-		}
+	try {
+		const result = await db.query(query, updateValues);
 
-		if (this.changes === 0) {
+		if (result.rows.length === 0) {
 			return res
 				.status(404)
 				.json({ error: "Todo not found or not owned by user" });
 		}
 
-		db.get("SELECT * FROM todos WHERE id = ?", [todoId], (err, todo) => {
-			if (err) {
-				return res
-					.status(500)
-					.json({ error: "Failed to retrieve the updated todo" });
-			}
+		const updatedTodo = result.rows[0];
+		const formattedTodo = {
+			...updatedTodo,
+			colorHex: getColorHex(updatedTodo.color),
+			reminder: formatReminder(updatedTodo.reminder),
+		};
 
-			const formattedTodo = {
-				...todo,
-				colorHex: getColorHex(todo.color),
-				reminder: formatReminder(todo.reminder),
-			};
-
-			res.json(formattedTodo);
-		});
-	});
+		res.json(formattedTodo);
+	} catch (error) {
+		console.error("Error updating todo:", error);
+		res.status(500).json({ error: "Failed to update todo" });
+	}
 });
 
 router.delete("/:id", verifyToken, async (req, res) => {
@@ -139,12 +135,12 @@ router.delete("/:id", verifyToken, async (req, res) => {
 	const userId = req.user.userId;
 
 	try {
-		const result = await db.run(
-			"DELETE FROM todos WHERE id = ? AND user_id = ?",
+		const result = await db.query(
+			"DELETE FROM todos WHERE id = $1 AND user_id = $2",
 			[id, userId]
 		);
 
-		if (result.changes === 0) {
+		if (result.rowCount === 0) {
 			return res.status(404).json({ message: "Task not found" });
 		}
 
@@ -155,39 +151,34 @@ router.delete("/:id", verifyToken, async (req, res) => {
 	}
 });
 
-router.get("/myday", verifyToken, (req, res) => {
+router.get("/myday", verifyToken, async (req, res) => {
 	const userId = req.user.userId;
 
-	const today = new Date();
-	const monthDay = `${(today.getMonth() + 1)
-		.toString()
-		.padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
-
 	const query = `
-	  SELECT * FROM todos 
-	  WHERE user_id = ? 
-	  AND reminder IS NOT NULL
-	  AND completed = 0
-	  AND (
-		(strftime('%m-%d', reminder) = ?) OR
-		DATE(reminder) < DATE('now')
-	  )
-	  ORDER BY reminder ASC
-	`;
+    SELECT * FROM todos 
+    WHERE user_id = $1 
+    AND reminder IS NOT NULL
+    AND completed = FALSE
+    AND (
+      DATE(reminder) = CURRENT_DATE
+      OR DATE(reminder) < CURRENT_DATE
+    )
+    ORDER BY reminder ASC
+  `;
 
-	db.all(query, [userId, monthDay], (err, todos) => {
-		if (err) {
-			return res.status(500).json({ error: "Internal server error" });
-		}
-
-		const formattedTodos = todos.map((todo) => ({
+	try {
+		const result = await db.query(query, [userId]);
+		const formattedTodos = result.rows.map((todo) => ({
 			...todo,
 			colorHex: getColorHex(todo.color),
 			reminder: formatReminder(todo.reminder),
 		}));
 
 		res.json(formattedTodos);
-	});
+	} catch (error) {
+		console.error("Error fetching my day todos:", error);
+		res.status(500).json({ error: "Internal server error" });
+	}
 });
 
 export default router;

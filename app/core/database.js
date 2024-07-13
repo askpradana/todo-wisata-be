@@ -1,32 +1,48 @@
-import sqlite3 from "sqlite3";
+import pg from "pg";
 import config from "./config.js";
 
-export const db = new sqlite3.Database(config.dbPath, (err) => {
-	if (err) {
-		console.error(err.message);
-	}
-	console.log("Connected to the database.");
+const pool = new pg.Pool({
+	user: config.dbUser,
+	host: config.dbHost,
+	database: config.dbName,
+	password: config.dbPassword,
+	port: config.dbPort,
 });
 
-// users table
-db.run(`CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT UNIQUE,
-  email TEXT UNIQUE,
-  password TEXT
-)`);
+export const db = {
+	query: (text, params) => pool.query(text, params),
+};
 
-// task table
-db.run(`CREATE TABLE IF NOT EXISTS todos (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER,
-  title TEXT NOT NULL,
-  description TEXT,
-  completed BOOLEAN DEFAULT 0,
-  color TEXT CHECK(color IN ('red', 'purple', 'blue', 'green', 'yellow', 'default') OR color IS NULL) DEFAULT 'default',
-  reminder DATETIME,
-  FOREIGN KEY (user_id) REFERENCES users (id)
-)`);
+// Initialize tables
+const initDb = async () => {
+	// users table
+	await db.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username TEXT UNIQUE,
+      email TEXT UNIQUE,
+      password TEXT,
+      latest_token TEXT
+    )
+  `);
+
+	// todos table
+	await db.query(`
+    CREATE TABLE IF NOT EXISTS todos (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id),
+      title TEXT NOT NULL,
+      description TEXT,
+      completed BOOLEAN DEFAULT FALSE,
+      color TEXT CHECK(color IN ('red', 'purple', 'blue', 'green', 'yellow', 'default') OR color IS NULL) DEFAULT 'default',
+      reminder TIMESTAMP
+    )
+  `);
+
+	console.log("Database initialized");
+};
+
+initDb().catch(console.error);
 
 export function getColorHex(colorName) {
 	const colorMap = {

@@ -1,0 +1,34 @@
+services:
+  postgresqls:
+    container_name: "todo-psql"
+    image: "postgres"
+    ports: 
+      - "5433:5432"
+    volumes:
+       - db_persdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2Nnkperi6!8qA*f3
+      POSTGRES_DB: todo_database
+    networks:
+      - default
+  node:
+    env_file:
+      - .env
+    container_name: "todo-express"
+    build: .
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./:/home/node/app
+    depends_on:
+      - postgresqls
+    ports:
+      - "3030:3030"
+    networks:
+      - default  
+    command: "node index.js"
+networks:
+  default:
+volumes:
+  db_persdata : {}

@@ -32,3 +32,5 @@ coverage
 # Environment
 .env
 .env.*
+
+data/*
