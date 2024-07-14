@@ -3,11 +3,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export default {
-	port: process.env.PORT,
+	port: 5432,
 	jwtSecret: process.env.JWT_SECRET,
 	dbUser: process.env.DB_USER,
 	dbHost: process.env.DB_HOST,
 	dbName: process.env.DB_NAME,
 	dbPassword: process.env.DB_PASSWORD,
-	dbPort: parseInt(process.env.DB_PORT || "5432", 10),
+	connection: {
+		options: `project=${process.env.DB_ENDPOINT_ID}`,
+	},
 };
